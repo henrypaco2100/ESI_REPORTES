@@ -8,7 +8,10 @@ from odoo.exceptions import UserError
 
 
 class AccountFinancialReport(models.Model):
-    _name='account.financial.report'
+    _name = 'account.financial.report'
+    _description = 'Informe financiero ESI'
+    # ESI: un único orden manual controla lista, vista previa, PDF y Excel.
+    _order = 'sequence, id'
 
     @api.model
     def _name_search(self, name='', args=None, operator='ilike', limit=100):
@@ -23,19 +26,28 @@ class AccountFinancialReport(models.Model):
 
 
     parent_id = fields.Many2one('account.financial.report', string='Padre')
-    def _get_children_by_order(self,type_order):
-        res = self
-        if type_order == 'number':
-            #ordenar cuentas para imprimir -Henry
-            children = self.search([('parent_id', 'in', self.ids)], order='st_numero_orden ASC')
-        elif type_order == 'account_number':
-            children = self.search([('parent_id', 'in', self.ids)], order='sd_numero_cuenta ASC')
-        else:
-            children = self.search([('parent_id', 'in', self.ids)], order='sequence ASC')
-        if children:
-            for child in children:
-                res += child._get_children_by_order(type_order)
-        return res
+
+    def _get_children_by_order(self):
+        """Devuelve el informe y sus descendientes usando el orden manual ESI.
+
+        ``sequence`` es la única fuente de orden para configuración, vista previa,
+        PDF y Excel.
+        """
+        if not self:
+            return self
+
+        model = self.env['account.financial.report']
+        all_ids = set(self.ids)
+        pending_ids = list(self.ids)
+        while pending_ids:
+            children = model.search([('parent_id', 'in', pending_ids)])
+            new_ids = [record_id for record_id in children.ids if record_id not in all_ids]
+            if not new_ids:
+                break
+            all_ids.update(new_ids)
+            pending_ids = new_ids
+
+        return model.search([('id', 'in', list(all_ids))], order='sequence ASC, id ASC')
     @api.depends('parent_id', 'parent_id.level')
     def _get_level(self):
         for report in self:
@@ -45,7 +57,7 @@ class AccountFinancialReport(models.Model):
             report.level = level
     name = fields.Char('Nombre del Informe', translate=True)
     level = fields.Integer(compute='_get_level', string='Nivel', store=True)
-    sequence = fields.Integer('Sequence')
+    sequence = fields.Integer(string='Orden', default=10, index=True)
     children_ids = fields.One2many('account.financial.report', 'parent_id', 'Informe de Cuenta')
     # aumentar tipo de resultado
     type = fields.Selection([
@@ -75,10 +87,7 @@ class AccountFinancialReport(models.Model):
         ('6', 'Texto más pequeño'),
     ], 'Estilo de informe financiero', default='0',
         help="Puede configurar aquí el formato en el que desea que se muestre este registro. Si deja el formato automático, se calculará en función de la jerarquía de informes financieros (campo 'nivel' calculado automáticamente).")
-    # Henry
     st_excluir_diario = fields.Many2many('account.journal', string='Nombre Diario')
-    # para Controlar orden
-    st_numero_orden = fields.Integer(string='Numero de orden')
     # para filtrar por interno o contable
     sd_tipo_reporte = fields.Selection([
         ('estado_resultado','Padre Estado de Resultado'),
@@ -88,10 +97,6 @@ class AccountFinancialReport(models.Model):
     sd_numero_cuenta = fields.Char(string ='Nº Cuenta')
     sd_account_financial_report_line_ids = fields.One2many('account.financial.report.line','sd_report_bi_financial_id')
     sd_planilla = fields.Many2one('ir.actions.report', string='Planilla')
-    sd_type_order = fields.Selection([
-        ('number','Por Numero'),
-        ('account_number','Por Numero de Cuenta'),
-    ],string='Tipo de Orden')
 
     def name_get(self):
         result = []
@@ -137,7 +142,6 @@ class AccountingReportBi(models.TransientModel):
     debit_credit = fields.Boolean(string='Mostrar columnas de débito / crédito')
     initial_balance = fields.Boolean(string='Incluir saldos iniciales', default=True)
     sortby = fields.Selection([('sort_date', 'Fecha'), ('sort_journal_partner', 'Diario & y Asociado')], string='Ordenar por',required=True, default='sort_date')
-    # Henry
     sd_account_id = fields.Many2many('account.account', string='Cuenta')
     currency_id = fields.Many2one('res.currency', string='Moneda')
     sd_tipo_reporte_libro_mayor = fields.Selection([('action_report_general_ledger','Clasico'), ('action_report_general_ledger_v2','Minimalista')], string='Tipo de Reporte', default='action_report_general_ledger_v2')
@@ -313,8 +317,8 @@ class AccountingReportBi(models.TransientModel):
     def _compute_report_balance(self, reports):
         res = {}
         fields = ['credit', 'debit', 'balance']
-        #ordenar cuentas para la Impresion - Henry
-        reports = sorted(reports,key=lambda reporte : int(str(reporte.level + reporte.st_numero_orden)))
+        # ESI: el mismo orden manual de la configuración se respeta en todos los cálculos.
+        reports = reports.sorted(key=lambda report: (report.sequence, report.id))
         for report in reports:
             if report.id in res:
                 continue
@@ -352,7 +356,7 @@ class AccountingReportBi(models.TransientModel):
 
     def get_account_lines(self):
         lines = []
-        child_reports = self.account_report_id._get_children_by_order(self.account_report_id.sd_type_order)
+        child_reports = self.account_report_id._get_children_by_order()
 
 
         used_context_dict = {
@@ -470,7 +474,7 @@ class AccountingReportBi(models.TransientModel):
         if not self.account_report_id:
             raise UserError('El campo "Tipo" es Obligatorio.\n Porfavor Rellene el campo.')
         final_dict = {}
-        # arreglar error fecha Henry
+        # Validación de fechas del período
         if not self.date_to:
             self.write({
                 'date_to': fields.Datetime.now()
@@ -519,7 +523,7 @@ class AccountingReportBi(models.TransientModel):
         if not self.account_report_id:
             raise UserError('El campo "Tipo" es Obligatorio.\n Porfavor Rellene el campo.')
         final_dict = {}
-        # arreglar error fecha Henry
+        # Validación de fechas del período
         if not self.date_to:
             self.write({
                 'date_to': fields.Datetime.now()

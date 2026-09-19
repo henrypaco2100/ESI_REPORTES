@@ -9,9 +9,8 @@
                     <group>
                         <group >
                             <field name="name"/>
+                            <field name="sequence" string="Orden"/>
                             <field name="level" invisible="1"/>
-                            <field name="sd_type_order" attrs="{'invisible': [('sd_tipo_reporte','in',['hijos'])]}"/>
-                            <field name="st_numero_orden" attrs="{'invisible': [('sd_type_order','in',['account_number'])]}"/>
                             <field name="sign"/>
                             <field name="sd_planilla" attrs="{'required': ['|', ('sd_tipo_reporte', '==', 'estado_resultado'), ('sd_tipo_reporte', '==', 'balance_general')], 'invisible': [('sd_tipo_reporte','==','hijos')]}"/>
                         </group>
@@ -19,7 +18,6 @@
                             <field name="sd_numero_cuenta"/>
                             <field name="sd_tipo_reporte"/>
                             <field name="parent_id"/>
-<!--                            <field name="sd_parent_id_tipo_reporte" invisible="1"/>-->
                             <field name="type"/>
                             <field name="style_overwrite"/>
                         </group>
@@ -62,7 +60,8 @@
             <field name="name">bi.financial.reports.v12.account.financial.report.tree</field>
             <field name="model">account.financial.report</field>
             <field name="arch" type="xml">
-                <tree string="Informe de la cuenta">
+                <tree string="Informe de la cuenta" default_order="sequence asc,id asc">
+                    <field name="sequence" widget="handle"/>
                     <field name="sd_numero_cuenta"/>
                     <field name="name"/>
                     <field name="parent_id" invisible="1"/>

@@ -1,5 +1,5 @@
 {'name': 'ESI - Odoo ALL Financial Reports (BS,P&L,GL,Trial Balance)(PDF/EXCEL)',
- 'version': '13.0.0.1',
+ 'version': '13.0.0.2',
  'author': 'ESI - Especialistas en Sistemas Integrados',
  'website': 'https://esibolivia.store',
  'category': 'Accounting',
